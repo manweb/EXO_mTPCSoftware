@@ -1,0 +1,86 @@
+# --- Directories -------------------------------------------------------------------
+SRCDIR := ../src
+BINDIR := $(BASEDIR)/bin
+BUILDDIR := ../build
+INCDIR := ../$(PKGNAME)
+LIBDIR := $(BASEDIR)/lib
+LINKDEFIN := $(wildcard $(INCDIR)/*LinkDef.h.in)
+UTILITIES_INC := $(BASEDIR)/utilities/mTPCUtilities
+
+LIBNAME := $(PKGNAME)
+
+# Make dependencies
+MAKEDEPEND = rm -f $@; \
+	$(CC) $(CCFLAGS) -MM $(INCLUDEFLAGS) $< > $@.$$$$;                                 \
+        cp $@.$$$$ $@.temp.$$$$; sed -e 's/\#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
+        -e '/^$$/ d' -e 's/$$/ :/' < $@.$$$$ >> $@.temp.$$$$;                         \
+	sed 's,\($*\)\.o[ :]*,$(BUILDDIR)/\1.o $@ : ,g' < $@.temp.$$$$ > $@ ;          \
+        rm -f $@*.$$$$;
+
+SHLIB := $(LIBDIR)/lib$(LIBNAME).$(SOSUFFIX)
+AUTOLINKDEF := $(BUILDDIR)/LinkDef_$(LIBNAME).h
+ROOTDICTCCNAME := $(BUILDDIR)/$(LIBNAME)DICT.C
+ROOTDICTHHNAME := $(BUILDDIR)/$(LIBNAME)DICT.h
+ROOTDICTOBJECT := $(ROOTDICTCCNAME:.C=.o)
+INCLUDEFLAGS = $(ROOT_INCLUDE_FLAGS) -I$(INCDIR) -I$(UTILITIES_INC)
+
+SOURCES := $(wildcard $(SRCDIR)/*.cc)
+OBJECTS := $(patsubst $(SRCDIR)/%.cc, $(BUILDDIR)/%.o, $(SOURCES))
+DEPCCFILES := $(patsubst $(SRCDIR)/%.cc, $(BUILDDIR)/%.d, $(SOURCES)) 
+ROOTDICTHEADERS := $(shell grep -l ClassDef $(wildcard $(INCDIR)/*.hh) | xargs) 
+BUILDDIRCONF := $(BUILDDIR)/.buildconf
+
+.PHONY: all depend lib clean static shared
+
+all: exe lib 
+
+exe: $(EXECUTABLES) lib
+
+lib: shared 
+
+shared: $(SHLIB)
+
+ifneq ($(MAKECMDGOALS),clean)
+-include $(DEPCCFILES) 
+endif
+
+$(BUILDDIRCONF):
+	@if [ ! -d $(BUILDDIR) ]; then mkdir -p $(BUILDDIR); fi
+	@touch $@
+
+$(DEPCCFILES): $(BUILDDIR)/%.d: $(SRCDIR)/%.cxx $(BUILDDIRCONF)
+	@echo "    Update dependencies.... $(<F)"
+	@$(MAKEDEPEND)
+
+$(BUILDDIR)/%.o: $(SRCDIR)/%.cc
+	@echo "    Compiling file......... $(<F)"
+	@$(CXX) -c $(CXXFLAGS) $(INCLUDEFLAGS) $< -o $@
+
+%.o: %.C
+	@$(CXX) -c $(CXXFLAGS) $(INCLUDEFLAGS) $< -o $@
+
+$(EXECUTABLES): $(OBJECTS) $(ROOTDICTOBJECT)
+	@echo "    Building executable.... $(@F)"
+	@$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBFLAGS)
+
+$(ROOTDICTCCNAME): $(ROOTDICTHEADERS) $(AUTOLINKDEF) 
+	@echo "    Rootifying files....... $(@F)"
+	@rm -f $(ROOTDICTCCNAME) $(ROOTDICTHHNAME) 
+	@$(ROOTCINT) $@ -c -p $(CXXFLAGS) $(ROOTDICTINCLUDE) $(INCLUDEFLAGS) $^ 
+ 
+$(SHLIB): $(OBJECTS) $(ROOTDICTOBJECT)
+	@echo "    Building library....... $(@F)"
+	@if [ ! -d $(LIBDIR) ]; then mkdir -p $(LIBDIR); fi
+	@$(SOMAKER) $(SOFLAGS) -o $@ $^ $(LIBFLAGS)
+
+$(AUTOLINKDEF): $(LINKDEFIN) $(ROOTDICTHEADERS) 
+	@echo "    Auto-making Linkdef.... $(@F)"
+	@$(PYTHON) $(BASEDIR)/make/makeLinkDef.py\
+        --output=$@  \
+        --basebuild=$(INCDIR)    \
+        --input_linkdef=$(LINKDEFIN) $(ROOTDICTHEADERS)
+
+clean:
+	@rm -f $(SHLIB) $(ROOTDICTCCNAME) $(ROOTDICTHHNAME) $(BUILDDIR)/*.o *~ $(BUILDDIR)/*.d
+	@rm -f $(AUTOLINKDEF) 
+	@rm -f $(EXECUTABLES)

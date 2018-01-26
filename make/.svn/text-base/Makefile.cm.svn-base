@@ -1,0 +1,14 @@
+# Very basic makefile
+CXXFLAGS = -fPIC -g  -O2 -W -Wall -Wextra -Wshadow 
+SOMAKER = g++
+SOFLAGS = -shared -Wl
+SOSUFFIX = so 
+
+ROOT_INCLUDE_FLAGS := $(shell root-config --cflags) 
+ROOT_LIB_FLAGS := $(shell root-config --libs) $(shell root-config --glibs) -lRooFit -lRooFitCore -lMinuit -lFoam
+ROOTCINT := $(shell root-config --bindir)/rootcint
+ROOT := $(shell root-config --bindir)/root
+
+PYTHON := python
+ROOTSOSUFFIX := so
+LIBFLAGS = $(ROOT_LIB_FLAGS)
